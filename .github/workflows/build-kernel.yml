@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build arm64 GKI kernel
+    name: Build arm64 GKI kernel with ThinLTO
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     env:
@@ -43,15 +43,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential cpio device-tree-compiler dwarves \
             flex kmod libelf-dev libncurses-dev libssl-dev \
-            clang-14 lld-14 llvm-14 python3 rsync
+            clang-14 lld lld-14 llvm-14 python3 rsync
 
-      - name: Build kernel, DTBs, and modules
+      - name: Build ThinLTO kernel, DTBs, and modules
         run: bash ci/build-kernel.sh
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sapphire-kernel-${{ github.sha }}
+          name: sapphire-kernel-thinlto-${{ github.sha }}
           path: /tmp/sapphire-kernel-dist/
           if-no-files-found: error
           retention-days: 14
