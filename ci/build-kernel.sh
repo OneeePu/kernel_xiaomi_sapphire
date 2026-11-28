@@ -28,12 +28,18 @@ make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" gki_defconfig
     "$ROOT_DIR/arch/arm64/configs/vendor/sapphire_GKI.config"
 
 printf 'Selecting ThinLTO...\n'
-"$ROOT_DIR/scripts/config" --file "$OUT_DIR/.config" \
-    --disable LTO_CLANG_FULL \
-    --enable LTO_CLANG_THIN
-
+LTO_CONFIG="$OUT_DIR/thinlto.config"
+cat > "$LTO_CONFIG" <<'EOF'
+# CONFIG_LTO_CLANG_FULL is not set
+CONFIG_LTO_CLANG_THIN=y
+EOF
+"$ROOT_DIR/scripts/kconfig/merge_config.sh" -m -O "$OUT_DIR" "$OUT_DIR/.config" "$LTO_CONFIG"
 make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" olddefconfig
-grep -qx 'CONFIG_LTO_CLANG_THIN=y' "$OUT_DIR/.config" || die "ThinLTO was not enabled by Kconfig."
+
+if ! grep -qx 'CONFIG_LTO_CLANG_THIN=y' "$OUT_DIR/.config"; then
+    grep -E '^(CONFIG_(LTO|HAS_LTO_CLANG|CC_IS_CLANG|LD_IS_LLD|AS_IS_LLVM|ARCH_SUPPORTS_LTO_CLANG)|# CONFIG_LTO_)' "$OUT_DIR/.config" >&2 || true
+    die "ThinLTO was not enabled by Kconfig."
+fi
 grep -qx '# CONFIG_LTO_CLANG_FULL is not set' "$OUT_DIR/.config" || die "Full LTO is still enabled."
 
 printf 'Building ThinLTO Image.gz, device trees, and modules with %s jobs...\n' "$BUILD_JOBS"
