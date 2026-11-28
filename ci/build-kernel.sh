@@ -15,6 +15,7 @@ die() {
 }
 
 [[ "$BUILD_JOBS" =~ ^[1-9][0-9]*$ ]] || die "BUILD_JOBS must be a positive integer."
+command -v ld.lld >/dev/null 2>&1 || die "ld.lld is required; install the LLVM linker."
 [[ -f "$ROOT_DIR/arch/arm64/configs/vendor/bengal_GKI.config" ]] || die "Missing Bengal GKI config fragment."
 [[ -f "$ROOT_DIR/arch/arm64/configs/vendor/sapphire_GKI.config" ]] || die "Missing Sapphire GKI config fragment."
 
@@ -25,9 +26,17 @@ make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" gki_defconfig
 "$ROOT_DIR/scripts/kconfig/merge_config.sh" -m -O "$OUT_DIR" "$OUT_DIR/.config" \
     "$ROOT_DIR/arch/arm64/configs/vendor/bengal_GKI.config" \
     "$ROOT_DIR/arch/arm64/configs/vendor/sapphire_GKI.config"
-make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" olddefconfig
 
-printf 'Building Image.gz, device trees, and modules with %s jobs...\n' "$BUILD_JOBS"
+printf 'Selecting ThinLTO...\n'
+"$ROOT_DIR/scripts/config" --file "$OUT_DIR/.config" \
+    --disable LTO_CLANG_FULL \
+    --enable LTO_CLANG_THIN
+
+make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" olddefconfig
+grep -qx 'CONFIG_LTO_CLANG_THIN=y' "$OUT_DIR/.config" || die "ThinLTO was not enabled by Kconfig."
+grep -qx '# CONFIG_LTO_CLANG_FULL is not set' "$OUT_DIR/.config" || die "Full LTO is still enabled."
+
+printf 'Building ThinLTO Image.gz, device trees, and modules with %s jobs...\n' "$BUILD_JOBS"
 make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" -j"$BUILD_JOBS" Image.gz dtbs modules
 
 KERNEL_RELEASE="$(make -s -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" kernelrelease)"
@@ -51,7 +60,8 @@ make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" \
     printf 'kernel_release=%s\n' "$KERNEL_RELEASE"
     printf 'source_commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)"
     printf 'arch=%s\n' "$ARCH"
+    printf 'lto=thin\n'
     printf 'config_fragments=bengal_GKI.config,sapphire_GKI.config\n'
 } > "$DIST_DIR/build-info.txt"
 
-printf 'Build complete. Artifacts are in %s\n' "$DIST_DIR"
+printf 'ThinLTO build complete. Artifacts are in %s\n' "$DIST_DIR"
