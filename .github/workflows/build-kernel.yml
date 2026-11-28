@@ -11,6 +11,7 @@ on:
       - 'include/**'
       - 'kernel/**'
       - 'ci/**'
+      - 'anykernel/**'
       - '.github/workflows/build-kernel.yml'
 
 permissions:
@@ -43,12 +44,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential cpio device-tree-compiler dwarves \
             flex kmod libelf-dev libncurses-dev libssl-dev \
-            clang clang-14 lld llvm llvm-14 python3 rsync
+            clang clang-14 lld llvm llvm-14 python3 rsync zip
 
       - name: Build ThinLTO kernel, DTBs, and modules
         run: bash ci/build-kernel.sh
 
-      - name: Upload kernel artifacts
+      - name: Package AnyKernel3 ZIP for sapphire and sapphiren
+        run: bash ci/package-anykernel.sh
+
+      - name: Upload kernel and AnyKernel3 artifacts
         uses: actions/upload-artifact@v4
         with:
           name: sapphire-kernel-thinlto-${{ github.sha }}
