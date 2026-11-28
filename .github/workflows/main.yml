@@ -105,6 +105,21 @@ jobs:
           # Force a fresh LLVM source checkout.
           unset GH_RUN_ID
 
+          # Handle LLVM moving LLVM_VERSION_MAJOR out of llvm/CMakeLists.txt.
+          python3 - <<'PYCODE'
+          from pathlib import Path
+
+          path = Path("build-llvm.py")
+          source = path.read_text()
+          old = r"        tot_llvm_ver = re.search('\d+', to_parse).group(0)"
+          new = """        version_match = re.search(r'\d+', to_parse or '')
+                  if version_match is not None:
+                      tot_llvm_ver = version_match.group(0)"""
+          if old not in source:
+              raise SystemExit("Could not find expected LLVM version parser")
+          path.write_text(source.replace(old, new, 1))
+          PYCODE
+
           chmod +x build-toolchain.sh
           bash ./build-toolchain.sh
 
