@@ -1,0 +1,57 @@
+name: Build Sapphire kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'arch/**'
+      - 'drivers/**'
+      - 'include/**'
+      - 'kernel/**'
+      - 'ci/**'
+      - '.github/workflows/build-kernel.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sapphire-kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build arm64 GKI kernel
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      BUILD_JOBS: '4'
+      LLVM: '-14'
+      OUT_DIR: ${{ runner.temp }}/sapphire-kernel-out
+      DIST_DIR: ${{ runner.temp }}/sapphire-kernel-dist
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential cpio device-tree-compiler dwarves \
+            flex kmod libelf-dev libncurses-dev libssl-dev \
+            clang-14 lld-14 llvm-14 python3 rsync
+
+      - name: Build kernel, DTBs, and modules
+        run: bash ci/build-kernel.sh
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sapphire-kernel-${{ github.sha }}
+          path: ${{ runner.temp }}/sapphire-kernel-dist/
+          if-no-files-found: error
+          retention-days: 14
