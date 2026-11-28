@@ -1,0 +1,177 @@
+
+name: Bool-X Clang | Redmi Note 13 4G Kernel
+
+on:
+  push:
+    branches:
+      - dev
+
+  workflow_dispatch:
+    inputs:
+      build_jobs:
+        description: Kernel build parallel jobs
+        required: true
+        type: choice
+        options:
+          - "2"
+          - "4"
+          - "6"
+          - "8"
+        default: "4"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sapphire-kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Bool-X Clang + ThinLTO Kernel
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    env:
+      ARCH: arm64
+      LLVM: "1"
+      LTO_MODE: thin
+      BUILD_JOBS: ${{ inputs.build_jobs || '4' }}
+      OUT_DIR: /tmp/sapphire-kernel-out
+      DIST_DIR: /tmp/sapphire-kernel-dist
+
+    steps:
+      # 1. Kernel source
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # 2. Build dependencies
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y --no-install-recommends \
+            bc \
+            binutils-dev \
+            bison \
+            build-essential \
+            ca-certificates \
+            ccache \
+            clang \
+            cmake \
+            cpio \
+            curl \
+            device-tree-compiler \
+            dwarves \
+            file \
+            flex \
+            gcc \
+            g++ \
+            git \
+            libelf-dev \
+            libssl-dev \
+            libncurses-dev \
+            lld \
+            make \
+            ninja-build \
+            patchelf \
+            python3 \
+            python3-dev \
+            rsync \
+            texinfo \
+            u-boot-tools \
+            xz-utils \
+            zlib1g-dev \
+            zip
+
+      # 3. Clone Bool-X Clang builder
+      - name: Checkout Bool-X Clang Builder
+        run: |
+          git clone --depth=1 \
+            --branch master \
+            https://github.com/onettboots/boolx-clang-build.git \
+            "$RUNNER_TEMP/boolx-clang-build"
+
+      # 4. Build custom LLVM and binutils
+      - name: Build Bool-X Clang Toolchain
+        shell: bash
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP/boolx-clang-build"
+
+          # Force a fresh LLVM source checkout.
+          unset GH_RUN_ID
+
+          chmod +x build-toolchain.sh
+          bash ./build-toolchain.sh
+
+          # Verify compiler output.
+          test -x install/bin/clang
+          test -x install/bin/ld.lld
+
+          echo "===== BOOL-X CLANG ====="
+          install/bin/clang --version
+
+          echo "===== LLVM LINKER ====="
+          install/bin/ld.lld --version
+
+          echo "===== TOOLCHAIN FILES ====="
+          ls -lh install/bin/clang install/bin/ld.lld
+
+      # 5. Add custom compiler to PATH
+      - name: Activate Bool-X Clang
+        run: |
+          echo "$RUNNER_TEMP/boolx-clang-build/install/bin" >> "$GITHUB_PATH"
+
+      # 6. Verify active compiler
+      - name: Verify Custom Toolchain
+        run: |
+          echo "===== ACTIVE CLANG ====="
+          command -v clang
+          clang --version
+
+          echo "===== LLVM TOOLS ====="
+          command -v ld.lld
+          command -v llvm-ar
+          command -v llvm-nm
+          command -v llvm-objcopy
+
+      # 7. Compile kernel
+      - name: Build Kernel with ThinLTO
+        run: |
+          bash ci/build-kernel.sh
+
+      # 8. Package AnyKernel3
+      - name: Package AnyKernel3
+        run: |
+          bash ci/package-anykernel.sh
+
+      # 9. Verify package
+      - name: Verify Kernel ZIP
+        run: |
+          set -e
+
+          ZIP_FILE=$(find "$DIST_DIR" \
+            -maxdepth 1 \
+            -name "*.zip" \
+            -print -quit)
+
+          test -n "$ZIP_FILE"
+          unzip -t "$ZIP_FILE"
+
+          echo "===== FINAL PACKAGE ====="
+          ls -lh "$ZIP_FILE"
+
+      # 10. Upload artifact
+      - name: Upload AnyKernel3
+        uses: actions/upload-artifact@v4
+        with:
+          name: BoolX-ThinLTO-sapphire-${{ github.sha }}
+          path: /tmp/sapphire-kernel-dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          
