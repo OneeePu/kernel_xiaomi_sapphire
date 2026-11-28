@@ -28,8 +28,8 @@ jobs:
     env:
       BUILD_JOBS: '4'
       LLVM: '-14'
-      OUT_DIR: ${{ runner.temp }}/sapphire-kernel-out
-      DIST_DIR: ${{ runner.temp }}/sapphire-kernel-dist
+      OUT_DIR: /tmp/sapphire-kernel-out
+      DIST_DIR: /tmp/sapphire-kernel-dist
 
     steps:
       - name: Check out source
@@ -52,6 +52,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sapphire-kernel-${{ github.sha }}
-          path: ${{ runner.temp }}/sapphire-kernel-dist/
+          path: /tmp/sapphire-kernel-dist/
           if-no-files-found: error
           retention-days: 14
