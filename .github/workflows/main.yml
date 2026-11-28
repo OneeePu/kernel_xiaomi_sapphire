@@ -113,8 +113,8 @@ jobs:
           source = path.read_text()
           old = r"        tot_llvm_ver = re.search('\d+', to_parse).group(0)"
           new = """        version_match = re.search(r'\d+', to_parse or '')
-                  if version_match is not None:
-                      tot_llvm_ver = version_match.group(0)"""
+        if version_match is not None:
+            tot_llvm_ver = version_match.group(0)"""
           if old not in source:
               raise SystemExit("Could not find expected LLVM version parser")
           path.write_text(source.replace(old, new, 1))
