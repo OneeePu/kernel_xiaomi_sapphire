@@ -8,6 +8,7 @@ DIST_DIR="${DIST_DIR:-${ROOT_DIR}/dist-ci}"
 BUILD_JOBS="${BUILD_JOBS:-$(nproc)}"
 ARCH=arm64
 LLVM="${LLVM:-1}"
+LLVM_TOOLS=(LLVM="$LLVM" LD=ld.lld AR=llvm-ar NM=llvm-nm)
 
 die() {
     printf 'ERROR: %s\n' "$*" >&2
@@ -15,14 +16,16 @@ die() {
 }
 
 [[ "$BUILD_JOBS" =~ ^[1-9][0-9]*$ ]] || die "BUILD_JOBS must be a positive integer."
-command -v ld.lld >/dev/null 2>&1 || die "ld.lld is required; install the LLVM linker."
+for tool in clang ld.lld llvm-ar llvm-nm; do
+    command -v "$tool" >/dev/null 2>&1 || die "$tool is required; install the matching LLVM toolchain."
+done
 [[ -f "$ROOT_DIR/arch/arm64/configs/vendor/bengal_GKI.config" ]] || die "Missing Bengal GKI config fragment."
 [[ -f "$ROOT_DIR/arch/arm64/configs/vendor/sapphire_GKI.config" ]] || die "Missing Sapphire GKI config fragment."
 
 mkdir -p "$OUT_DIR" "$DIST_DIR"
 
 printf 'Configuring arm64 GKI with Bengal and Sapphire fragments...\n'
-make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" gki_defconfig
+make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" "${LLVM_TOOLS[@]}" gki_defconfig
 "$ROOT_DIR/scripts/kconfig/merge_config.sh" -m -O "$OUT_DIR" "$OUT_DIR/.config" \
     "$ROOT_DIR/arch/arm64/configs/vendor/bengal_GKI.config" \
     "$ROOT_DIR/arch/arm64/configs/vendor/sapphire_GKI.config"
@@ -34,18 +37,18 @@ cat > "$LTO_CONFIG" <<'EOF'
 CONFIG_LTO_CLANG_THIN=y
 EOF
 "$ROOT_DIR/scripts/kconfig/merge_config.sh" -m -O "$OUT_DIR" "$OUT_DIR/.config" "$LTO_CONFIG"
-make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" olddefconfig
+make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" "${LLVM_TOOLS[@]}" olddefconfig
 
 if ! grep -qx 'CONFIG_LTO_CLANG_THIN=y' "$OUT_DIR/.config"; then
-    grep -E '^(CONFIG_(LTO|HAS_LTO_CLANG|CC_IS_CLANG|LD_IS_LLD|AS_IS_LLVM|ARCH_SUPPORTS_LTO_CLANG)|# CONFIG_LTO_)' "$OUT_DIR/.config" >&2 || true
+    grep -E '^(CONFIG_(LTO|HAS_LTO_CLANG|CC_IS_CLANG|LD_IS_LLD|AS_IS_LLVM|ARCH_SUPPORTS_LTO_CLANG|KASAN|GCOV_KERNEL|FTRACE_MCOUNT_USE_RECORDMCOUNT)|# CONFIG_LTO_)' "$OUT_DIR/.config" >&2 || true
     die "ThinLTO was not enabled by Kconfig."
 fi
 grep -qx '# CONFIG_LTO_CLANG_FULL is not set' "$OUT_DIR/.config" || die "Full LTO is still enabled."
 
 printf 'Building ThinLTO Image.gz, device trees, and modules with %s jobs...\n' "$BUILD_JOBS"
-make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" -j"$BUILD_JOBS" Image.gz dtbs modules
+make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" "${LLVM_TOOLS[@]}" -j"$BUILD_JOBS" Image.gz dtbs modules
 
-KERNEL_RELEASE="$(make -s -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" kernelrelease)"
+KERNEL_RELEASE="$(make -s -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" "${LLVM_TOOLS[@]}" kernelrelease)"
 mkdir -p "$DIST_DIR/dtbs"
 
 install -D "$OUT_DIR/arch/arm64/boot/Image" "$DIST_DIR/Image"
@@ -59,7 +62,7 @@ for dtb in "${DTB_FILES[@]}"; do
     install -D "$dtb" "$DIST_DIR/dtbs/$relative_path"
 done
 
-make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" LLVM="$LLVM" \
+make -C "$ROOT_DIR" O="$OUT_DIR" ARCH="$ARCH" "${LLVM_TOOLS[@]}" \
     INSTALL_MOD_PATH="$DIST_DIR/modules" modules_install
 
 {
